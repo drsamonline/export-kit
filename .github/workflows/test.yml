@@ -1,0 +1,22 @@
+name: test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the unit tests
+        run: node test-node.js
+      - name: Check the built ZIP with the system unzip
+        run: |
+          node -e 'const E=require("./export-kit.js");require("fs").writeFileSync("out.zip",Buffer.from(E.zip([{name:"a.txt",data:"hello"},{name:"b.json",data:JSON.stringify({ok:true})}])));'
+          unzip -t out.zip
