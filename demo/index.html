@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>export-kit — demo</title>
+<style>
+  :root{--bg:#0f1115;--card:#171a21;--ink:#e7e9ee;--mut:#9aa3b2;--line:#252a34;--acc:#22c55e}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header,main,footer{max-width:760px;margin:0 auto;padding:24px 20px}
+  h1{font-size:22px;margin:0 0 4px}
+  .mut{color:var(--mut)}
+  button{background:var(--acc);color:#06210f;border:0;font-weight:600;border-radius:10px;padding:10px 14px;margin:4px 6px 4px 0;cursor:pointer;font-size:15px}
+  pre{background:#0b0d11;border:1px solid var(--line);border-radius:10px;padding:12px;overflow:auto;font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>export-kit — demo</h1>
+  <p class="mut">Each button saves a real file to your device. Everything runs locally; nothing is uploaded.</p>
+</header>
+<main>
+  <p>
+    <button onclick="dlText()">Save notes.txt</button>
+    <button onclick="dlJson()">Save data.json</button>
+    <button onclick="dlCsv()">Save rows.csv</button>
+    <button onclick="dlZip()">Save bundle.zip</button>
+  </p>
+  <p class="mut">`bundle.zip` contains all three files — open it with any unzip tool.</p>
+  <pre id="log">ready.</pre>
+</main>
+<footer class="mut">export-kit · © 2026 Dr Sohil Momin · Part of the Forge system</footer>
+
+<script src="../export-kit.js"></script>
+<script>
+  var log = document.getElementById("log");
+  function say(m) { log.textContent = m + "\n" + log.textContent; }
+
+  var notes = "a,b,c\n1,2,3\n";
+  var data = { hello: "world", n: 42, ok: true };
+  var rows = [{ name: "Ada", n: 1 }, { name: "Bo", n: 2 }];
+
+  // tiny CSV for the demo (in a real app, use Loom.csv.toCSV from web-kit)
+  function toCsv(rs) {
+    var keys = Object.keys(rs[0]);
+    var esc = function (v) { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    return [keys.join(",")].concat(rs.map(function (r) { return keys.map(function (k) { return esc(r[k]); }).join(","); })).join("\n") + "\n";
+  }
+
+  function dlText() { Export.text("notes.txt", notes); say("saved notes.txt"); }
+  function dlJson() { Export.json("data.json", data); say("saved data.json"); }
+  function dlCsv() { Export.csv("rows.csv", toCsv(rows)); say("saved rows.csv"); }
+  function dlZip() {
+    Export.saveZip("bundle.zip", [
+      { name: "notes.txt", data: notes },
+      { name: "data.json", data: JSON.stringify(data, null, 2) },
+      { name: "rows.csv", data: toCsv(rows) }
+    ]);
+    say("saved bundle.zip (" + Export.zip([{ name: "notes.txt", data: notes }, { name: "data.json", data: JSON.stringify(data) }, { name: "rows.csv", data: toCsv(rows) }]).length + " bytes)");
+  }
+</script>
+</body>
+</html>
