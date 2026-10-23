@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>export-kit — get bytes and files off the device</title>
+<meta name="description" content="Save text, JSON, CSV and binary to the user's device, and bundle files into a store-only ZIP. One file, no dependencies. MIT.">
+<style>
+  :root{--bg:#0f1115;--card:#171a21;--ink:#e7e9ee;--mut:#9aa3b2;--line:#252a34;--acc:#22c55e}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header,main,footer{max-width:760px;margin:0 auto;padding:24px 20px}
+  h1{margin:0 0 6px;font-size:24px}
+  .mut{color:var(--mut)}
+  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));margin:18px 0}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card h3{margin:0 0 4px;font-size:14px}
+  .card p{margin:0;color:var(--mut);font-size:13px}
+  a{color:#7dd3fc}
+  .btn{display:inline-block;background:var(--acc);color:#06210f;text-decoration:none;font-weight:600;border-radius:10px;padding:10px 14px;margin:4px 4px 0 0}
+  code{background:#0b0d11;border:1px solid var(--line);border-radius:6px;padding:1px 5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>export-kit</h1>
+  <p class="mut">Save text, JSON, CSV and binary to the user's device — and bundle files into a store-only ZIP. One file, no dependencies. MIT.</p>
+  <p><a class="btn" href="./demo/">Try the demo</a> <a class="btn" href="https://github.com/drsamonline/export-kit">Source</a></p>
+</header>
+<main>
+  <div class="grid">
+    <div class="card"><h3>Save anything</h3><p><code>Export.text</code>, <code>.json</code>, <code>.csv</code>, <code>.blob</code> — the <code>Blob → URL → &lt;a download&gt;</code> dance, once.</p></div>
+    <div class="card"><h3>Bundle into a ZIP</h3><p><code>Export.zip(files)</code> writes a store-only archive readable by every unzip tool. No dependencies.</p></div>
+    <div class="card"><h3>Pure and testable</h3><p><code>Export.zip</code> runs in Node — build a ZIP, read it back, check the CRCs.</p></div>
+    <div class="card"><h3>Offline-first</h3><p>No network, no CDN, no telemetry. Works from <code>file://</code> and GitHub Pages.</p></div>
+  </div>
+  <p class="mut">Sits beside <a href="https://drsamonline.github.io/web-kit/">web-kit</a> (CSV, storage) and above <a href="https://drsamonline.github.io/compress-kit/">compress-kit</a> (gzip/deflate).</p>
+</main>
+<footer class="mut">Built with export-kit · © 2026 Dr Sohil Momin · Part of the Forge system</footer>
+</body>
+</html>
