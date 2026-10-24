@@ -299,6 +299,16 @@ function df(rows) {
   return self;
 }
 
+// CSV injection guard. Excel and Sheets treat a cell starting with = + - @ (or a
+// leading TAB/CR) as a FORMULA, so a value like `=cmd|'/c calc'!A0` becomes an
+// executable cell when the CSV is opened. Prefix it with an apostrophe so it stays
+// text - but leave a NUMBER alone, so "-5" does not become "'-5".
+// The apps had this guard before the kit did; folded back here, and made
+// number-aware, which the apps' version was not.
+function csvSafe(s) {
+  return (/^[=+\-@\t\r]/.test(s) && !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)) ? "'" + s : s;
+}
+
 // An RFC4180 writer - the inverse of the reader below, and the half that did not exist.
 // A field is quoted only when it must be (a comma, a quote, a newline), quotes are
 // doubled, and the header is the union of the keys in first-seen order so two rows with
@@ -314,7 +324,7 @@ function _toCSV(rows) {
   });
   function cell(v) {
     if (v === undefined || v === null) return "";
-    var s = String(v);
+    var s = csvSafe(String(v));
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
   var out = [head.map(cell).join(",")];
@@ -362,6 +372,7 @@ df.fromCSV = function (text) {
 
   return {
     version: VERSION, df: df, fromCSV: df.fromCSV,
+    csvSafe: csvSafe,
     save: save, text: text, json: json, csv: csv, blob: blob,
     zip: zip, saveZip: saveZip,
     crc32: crc32, toBytes: toBytes, utf8Encode: utf8Encode,
