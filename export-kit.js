@@ -167,8 +167,201 @@
   function blob(name, data, mime) { return save(name, data, mime || "application/octet-stream"); }
   function saveZip(name, files) { return save(name, zip(files), "application/zip"); }
 
+/* ---------------------------------------------------------------------------
+ * A small dataframe over an array of plain objects.
+ *
+ * export-kit already parses and writes CSV, but had nothing to do with the rows
+ * afterwards, so every data-heavy app hand-rolled the same loops: group these rows,
+ * total that column, sort by this. danfojs is the reference (a pandas-like library),
+ * but it is large and we are zero-dependency, so this is only the small useful core.
+ *
+ *   df(rows)
+ *     .filter(pred)          .sortBy(key, dir)     .groupBy(key)
+ *     .sum(key) .count() .mean(key) .min(key) .max(key)
+ *     .select(keys)          .unique(key)
+ *     .toCSV()               df.fromCSV(text)
+ *
+ * A NOTE ON NUMBERS, learned the hard way elsewhere in this system: our own data
+ * does not always have the shape a name suggests. `releases` turned out to be a URL,
+ * not a count. So every numeric function here SKIPS a value it cannot read rather
+ * than producing NaN - a total of NaN is worse than a total that quietly omits a
+ * value, and far worse than a crash nobody expected. `sum()` also reports how many
+ * values it used, so an omission is visible rather than silent.
+ * ------------------------------------------------------------------------- */
+
+function _num(v) {
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  if (typeof v === "string" && v.trim() !== "") {
+    var n = Number(v);
+    return isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function _cmp(a, b) {
+  if (a === b) return 0;
+  if (a == null) return 1;                 // missing sorts last, in both directions
+  if (b == null) return -1;
+  if (typeof a === "number" && typeof b === "number") return a < b ? -1 : 1;
+  var as = String(a), bs = String(b);
+  return as < bs ? -1 : (as > bs ? 1 : 0);
+}
+
+function df(rows) {
+  if (!Array.isArray(rows)) rows = [];
+  var self = { rows: rows.slice() };
+
+  self.filter = function (pred) { return df(self.rows.filter(pred)); };
+
+  // STABLE by construction, not by relying on the engine: equal elements keep the
+  // order they came in with, which is what makes a second sort meaningful.
+  self.sortBy = function (key, dir) {
+    var sign = (dir === "desc" || dir === -1) ? -1 : 1;
+    var idx = self.rows.map(function (r, i) { return [r, i]; });
+    idx.sort(function (x, y) {
+      var c = _cmp(x[0] ? x[0][key] : null, y[0] ? y[0][key] : null) * sign;
+      return c !== 0 ? c : x[1] - y[1];
+    });
+    return df(idx.map(function (p) { return p[0]; }));
+  };
+
+  self.groupBy = function (key) {
+    var out = {}, order = [];
+    self.rows.forEach(function (r) {
+      var k = r ? r[key] : undefined;
+      var ks = String(k);
+      if (!Object.prototype.hasOwnProperty.call(out, ks)) { out[ks] = []; order.push(ks); }
+      out[ks].push(r);
+    });
+    var g = { keys: order, groups: out };
+    g.get = function (k) { return df(out[String(k)] || []); };
+    return g;
+  };
+
+  // { value, used, skipped } - an omission is REPORTED, never silent
+  self.sum = function (key) {
+    var t = 0, used = 0, skipped = 0;
+    self.rows.forEach(function (r) {
+      var n = _num(r ? r[key] : null);
+      if (n === null) { if (r && r[key] !== undefined && r[key] !== null && r[key] !== "") skipped++; return; }
+      t += n; used++;
+    });
+    return { value: t, used: used, skipped: skipped };
+  };
+
+  self.mean = function (key) {
+    var s = self.sum(key);
+    return { value: s.used ? s.value / s.used : 0, used: s.used, skipped: s.skipped };
+  };
+
+  function extreme(key, pick) {
+    var best = null, used = 0;
+    self.rows.forEach(function (r) {
+      var n = _num(r ? r[key] : null);
+      if (n === null) return;
+      used++;
+      if (best === null || pick(n, best)) best = n;
+    });
+    return { value: best, used: used };
+  }
+  self.min = function (key) { return extreme(key, function (n, b) { return n < b; }); };
+  self.max = function (key) { return extreme(key, function (n, b) { return n > b; }); };
+
+  self.count = function () { return self.rows.length; };
+
+  self.select = function (keys) {
+    return df(self.rows.map(function (r) {
+      var o = {};
+      keys.forEach(function (k) { o[k] = r ? r[k] : undefined; });
+      return o;
+    }));
+  };
+
+  self.unique = function (key) {
+    var seen = {}, out = [];
+    self.rows.forEach(function (r) {
+      var v = r ? r[key] : undefined;
+      var ks = String(v);
+      if (!Object.prototype.hasOwnProperty.call(seen, ks)) { seen[ks] = 1; out.push(v); }
+    });
+    return out;
+  };
+
+  // THE SPEC SAID to reuse export-kit's existing CSV code. There was nothing to reuse:
+  // the kit's `csv(name, csvText)` DOWNLOADS a csv, it does not serialise rows. So the
+  // other half of the round-trip had to be written - which is the honest reason this
+  // function is here rather than a call to something that already existed.
+  self.toCSV = function () { return _toCSV(self.rows); };
+
+  self.first = function (n) { return df(self.rows.slice(0, n === undefined ? 1 : n)); };
+  self.last = function (n) { return df(self.rows.slice(-(n === undefined ? 1 : n))); };
+
+  return self;
+}
+
+// An RFC4180 writer - the inverse of the reader below, and the half that did not exist.
+// A field is quoted only when it must be (a comma, a quote, a newline), quotes are
+// doubled, and the header is the union of the keys in first-seen order so two rows with
+// different shapes do not silently lose a column.
+function _toCSV(rows) {
+  if (!rows || !rows.length) return "";
+  var head = [], seen = {};
+  rows.forEach(function (r) {
+    if (!r) return;
+    Object.keys(r).forEach(function (k) {
+      if (!Object.prototype.hasOwnProperty.call(seen, k)) { seen[k] = 1; head.push(k); }
+    });
+  });
+  function cell(v) {
+    if (v === undefined || v === null) return "";
+    var s = String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  var out = [head.map(cell).join(",")];
+  rows.forEach(function (r) {
+    out.push(head.map(function (h) { return cell(r ? r[h] : ""); }).join(","));
+  });
+  return out.join("\r\n") + "\r\n";
+}
+
+
+// A small RFC4180 reader. export-kit could WRITE csv and not read it, so the
+// round-trip the spec asks for had no other half.
+df.fromCSV = function (text) {
+  text = String(text == null ? "" : text).replace(/^\uFEFF/, "");
+  var rows = [], row = [], field = "", q = false, i = 0;
+  while (i < text.length) {
+    var c = text[i];
+    if (q) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i += 2; continue; }
+        q = false; i++; continue;
+      }
+      field += c; i++; continue;
+    }
+    if (c === '"') { q = true; i++; continue; }
+    if (c === ",") { row.push(field); field = ""; i++; continue; }
+    if (c === "\r") { i++; continue; }
+    if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+    field += c; i++;
+  }
+  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  if (!rows.length) return df([]);
+  var head = rows.shift().map(function (h) { return h.trim(); });
+  return df(rows.filter(function (r) { return r.length > 1 || (r[0] || "") !== ""; })
+    .map(function (r) {
+      var o = {};
+      head.forEach(function (h, j) { o[h] = r[j] === undefined ? "" : r[j]; });
+      return o;
+    }));
+};
+
+/* ------------------------------------------------------------------------- */
+
+
+
   return {
-    version: VERSION,
+    version: VERSION, df: df, fromCSV: df.fromCSV,
     save: save, text: text, json: json, csv: csv, blob: blob,
     zip: zip, saveZip: saveZip,
     crc32: crc32, toBytes: toBytes, utf8Encode: utf8Encode,

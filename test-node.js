@@ -96,3 +96,63 @@ throws(() => Export.save("x.txt", "hi"), /needs a browser/, "save() fails cleanl
 
 console.log("\n" + pass + " passed, " + fail + " failed");
 process.exit(fail ? 1 : 0);
+
+// ---- dataframe: groupBy+sum, sort stability, CSV round-trip -------------
+(function () {
+  let fails = [];
+function ok(what, cond, detail){ if(!cond) fails.push(what + (detail? "  -> "+detail : "")); }
+
+// 1. groupBy + sum
+const rows = [
+  {food:"roti", kcal:120, meal:"lunch"},
+  {food:"dal",  kcal:150, meal:"lunch"},
+  {food:"idli", kcal:60,  meal:"breakfast"},
+  {food:"dosa", kcal:130, meal:"breakfast"},
+  {food:"oops", kcal:"n/a", meal:"breakfast"},   // a value that is NOT a number
+];
+const g = K.df(rows).groupBy("meal");
+ok("groupBy makes 2 groups", g.keys.length === 2, JSON.stringify(g.keys));
+const lunch = g.get("lunch").sum("kcal");
+ok("lunch total is 270", lunch.value === 270, String(lunch.value));
+ok("breakfast total is 190", g.get("breakfast").sum("kcal").value === 190, String(g.get("breakfast").sum("kcal").value));
+// the non-number is SKIPPED and REPORTED, not NaN
+const bf = g.get("breakfast").sum("kcal");
+ok("a non-number is skipped, not NaN", bf.value === 190 && bf.skipped === 1, JSON.stringify(bf));
+// mean divides by the values it USED, not by the row count - a mean that included a
+// skipped value would be a lie. My first assertion said 190/3 and failed, because the
+// code was right and I was not. It reports used and skipped so the caller can tell.
+const bfm = g.get("breakfast").mean("kcal");
+ok("mean is over the values used (2), not the rows (3)", Math.abs(bfm.value - 95) < 1e-9, JSON.stringify(bfm));
+ok("mean reports what it used and what it skipped", bfm.used === 2 && bfm.skipped === 1, JSON.stringify(bfm));
+
+// 2. sort stability
+const s = [
+  {n:"a", k:2, i:1}, {n:"b", k:1, i:2}, {n:"c", k:2, i:3},
+  {n:"d", k:1, i:4}, {n:"e", k:2, i:5},
+];
+const sorted = K.df(s).sortBy("k").rows.map(r => r.n).join("");
+ok("sortBy asc is stable", sorted === "bdace", sorted);
+const desc = K.df(s).sortBy("k","desc").rows.map(r => r.n).join("");
+ok("sortBy desc is stable", desc === "acebd", desc);
+ok("sortBy does not mutate the input", K.df(s).sortBy("k") && s[0].n === "a");
+
+// 3. CSV round-trip
+const csv = K.df(rows).toCSV();
+const back = K.fromCSV(csv);
+ok("round-trip keeps the row count", back.count() === rows.length, back.count() + " vs " + rows.length);
+ok("round-trip keeps the values", back.rows[0].food === "roti" && back.rows[0].kcal === "120", JSON.stringify(back.rows[0]));
+ok("round-trip keeps the groupBy working", back.groupBy("meal").get("lunch").count() === 2);
+// and the awkward cases
+const weird = [{a:'he said "hi"', b:"line1\nline2"}, {a:"comma, here", b:"plain"}];
+const rt = K.fromCSV(K.df(weird).toCSV());
+ok("quotes survive the round-trip", rt.rows[0].a === 'he said "hi"', JSON.stringify(rt.rows[0].a));
+ok("a comma inside a field survives", rt.rows[1].a === "comma, here", JSON.stringify(rt.rows[1].a));
+
+// and nothing existing broke
+["save","text","json","csv","blob","zip","saveZip","crc32"].forEach(k => ok("export-kit still has "+k, typeof K[k] === "function"));
+ok("df is exported", typeof K.df === "function");
+ok("fromCSV is exported", typeof K.fromCSV === "function");
+
+if (fails.length) { console.log("FAILED " + fails.length + ":"); fails.forEach(f => console.log("   " + f)); process.exit(1); }
+console.log("all dataframe tests passed: groupBy+sum, sort stability, CSV round-trip, and nothing existing broke");
+})();
