@@ -94,11 +94,13 @@ ok(empty.length === 22, "empty zip is just the EOCD (22 bytes)", empty.length);
 /* ---- save() needs a browser ---- */
 throws(() => Export.save("x.txt", "hi"), /needs a browser/, "save() fails cleanly with no DOM");
 
-console.log("\n" + pass + " passed, " + fail + " failed");
-process.exit(fail ? 1 : 0);
+// (The summary and exit used to sit HERE, which meant the dataframe section
+//  below never ran - its tests were dead code. Moved to the end of the file.)
 
 // ---- dataframe: groupBy+sum, sort stability, CSV round-trip -------------
 (function () {
+  const K = Export;   // the section was written against `K`, which was never defined,
+                      // so it crashed on the first line once it finally ran.
   let fails = [];
 function ok(what, cond, detail){ if(!cond) fails.push(what + (detail? "  -> "+detail : "")); }
 
@@ -154,5 +156,18 @@ ok("df is exported", typeof K.df === "function");
 ok("fromCSV is exported", typeof K.fromCSV === "function");
 
 if (fails.length) { console.log("FAILED " + fails.length + ":"); fails.forEach(f => console.log("   " + f)); process.exit(1); }
+// CSV injection: a formula cell is neutralised; a NUMBER is left alone.
+const inj = K.df([{ a: "=cmd|'/c calc'!A0", b: "-5", c: "@SUM(A1)", d: "+3.2", e: "plain" }]).toCSV();
+ok("csv injection: a leading = is neutralised", inj.indexOf("'=cmd") !== -1);
+ok("csv injection: a leading @ is neutralised", inj.indexOf("'@SUM") !== -1);
+ok("csv injection: a negative NUMBER is left alone", inj.indexOf("-5") !== -1 && inj.indexOf("'-5") === -1);
+ok("csv injection: a +NUMBER is left alone", inj.indexOf("+3.2") !== -1 && inj.indexOf("'+3.2") === -1);
+ok("csv injection: the neutralised cell survives as literal text", inj.indexOf("'=cmd") !== -1 && inj.indexOf('""') === -1);
+ok("csvSafe is exported", typeof K.csvSafe === "function");
+
 console.log("all dataframe tests passed: groupBy+sum, sort stability, CSV round-trip, and nothing existing broke");
 })();
+
+// The real summary: every section above has now run.
+console.log("\n" + pass + " passed, " + fail + " failed");
+process.exit(fail ? 1 : 0);
