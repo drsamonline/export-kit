@@ -1,6 +1,6 @@
 /* export-kit — get bytes and files off the device, in the browser.
  * One file. No build step. No CDN. No dependencies. Works from file:// and Pages.
- * MIT License. (c) 2026 Dr Sohil Momin.
+ * PolyForm Noncommercial 1.0.0. (c) 2026 Dr Sohil Momin.
  *
  * Exposes window.Export with: save, text, json, csv, blob, zip, saveZip,
  * crc32, toBytes, blobUrl, revoke.
