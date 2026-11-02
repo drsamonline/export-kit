@@ -125,38 +125,9 @@ window.addEventListener("error", function () { window.__bootError = true; });
     say("Undone. Reloading."); setTimeout(function () { location.reload(); }, 350); return true;
   };
   /* --- keyboard --- */
-  function overlay() {
-    var old = document.getElementById("__keysHelp"); if (old) { old.remove(); return; }
-    var b = document.createElement("div"); b.id = "__keysHelp";
-    b.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:10001;display:flex;align-items:center;justify-content:center;font:14px system-ui;color:#eee";
-    b.innerHTML = '<div style="background:#15181f;border:1px solid #333;border-radius:12px;padding:20px 24px;max-width:360px"><div style="font-weight:700;margin-bottom:10px">Keyboard</div><div style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px"><kbd style="background:#222;border-radius:4px;padding:1px 6px">/</kbd><span>focus search</span><kbd style="background:#222;border-radius:4px;padding:1px 6px">?</kbd><span>this list</span><kbd style="background:#222;border-radius:4px;padding:1px 6px">Esc</kbd><span>leave a field</span><kbd style="background:#222;border-radius:4px;padding:1px 6px">Ctrl Z</kbd><span>undo</span></div><div style="margin-top:12px;opacity:.6;font-size:12px">press ? or click to close</div></div>';
-    b.onclick = function () { b.remove(); }; document.body.appendChild(b);
-  }
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") { if (typing(e)) e.target.blur(); var b = document.getElementById("__keysHelp"); if (b) b.remove(); return; }
-    if (e.ctrlKey || e.metaKey || e.altKey) { if ((e.ctrlKey || e.metaKey) && String(e.key).toLowerCase() === "z" && !typing(e)) { e.preventDefault(); window.__undo(); } return; }
-    if (typing(e)) return;
-    if (e.key === "/") { var s = document.querySelector('input[type="search"], input[placeholder*="search" i], input[id*="search" i], input[placeholder*="filter" i], input[type="text"]'); if (s) { e.preventDefault(); s.focus(); if (s.select) s.select(); say("Search - Esc to leave"); } return; }
-    if (e.key === "?") { e.preventDefault(); overlay(); }
-  });
-  /* --- the buttons --- */
-  function add() {
-    if (!document.body || document.getElementById("__tools")) return;
-    var wrap = document.createElement("div"); wrap.id = "__tools";
-    wrap.style.cssText = "position:fixed;left:10px;bottom:10px;z-index:9998;display:flex;gap:6px;flex-wrap:wrap;max-width:70vw";
-    [["Save my data", window.__exportAll, "Download everything this app has stored, as JSON"],
-     ["Restore", window.__importAll, "Load a JSON backup and restore it"],
-     ["Undo", window.__undo, "Undo the last change (Ctrl+Z)"],
-     ["?", overlay, "Keyboard shortcuts"]].forEach(function (b) {
-      var el = document.createElement("button");
-      el.textContent = b[0]; el.title = b[2];
-      el.style.cssText = "background:#111;color:#eee;border:1px solid #444;border-radius:8px;padding:6px 10px;font:12px system-ui;cursor:pointer;opacity:.75";
-      el.onmouseenter = function () { el.style.opacity = "1"; }; el.onmouseleave = function () { el.style.opacity = ".75"; };
-      el.onclick = b[1]; wrap.appendChild(el);
-    });
-    document.body.appendChild(wrap);
-  }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", add); else add();
+  /* The floating cluster, its keyboard overlay and its Ctrl+Z handler were removed by
+   the owner: they sat over each app's own controls and fought its own shortcuts.
+   The export/import/undo functions above remain callable from an app's own menu. */
 })();
 </script>
 </body>
