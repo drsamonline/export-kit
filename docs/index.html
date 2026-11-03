@@ -26,6 +26,11 @@
 <header>
   <h1>export-kit</h1>
   <p class="mut">Save text, JSON, CSV and binary to the user's device — and bundle files into a store-only ZIP. One file, no dependencies. MIT.</p>
+<figure style="margin:26px 0 0;text-align:center">
+  <img src="assets/concept.svg" alt="A diagram of what this kit does"
+       style="width:100%;max-width:320px;height:auto">
+</figure>
+
   <p><a class="btn" href="./demo/">Try the demo</a> <a class="btn" href="https://github.com/drsamonline/export-kit">Source</a></p>
 </header>
 <main>
@@ -199,7 +204,20 @@ window.__smokeTest = function () {
 window.addEventListener("error", function () { window.__bootError = true; });
 </script>
 
-<style>:focus-visible{outline:2px solid currentColor;outline-offset:2px}</style>
+<style>:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+  /* ---------- light theme ----------
+     Added so the page reads on paper. It overrides the page's own variables and
+     nothing else — no markup, no layout, no type. */
+  :root, html {
+    color-scheme: light;
+    --bg: #f7f6f2;
+    --card: #ffffff;
+    --ink: #14161a;
+    --mut: #5c6470;
+    --line: #e2ddd2;
+    --acc: #178840;
+  }
+</style>
 <script>
 /* THE FOUR THINGS EVERY APP HERE SHOULD HAVE, in one block:
    take your data out, put it back, undo the last change, and drive it from the keyboard.
