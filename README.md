@@ -4,6 +4,8 @@
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 
 
+
+![Screenshot](docs/shot.png)
 **Get bytes and files off the device, in the browser.** One file, no build step,
 no dependencies. Works from `file://` and from GitHub Pages.
 
