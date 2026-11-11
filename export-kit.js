@@ -17,7 +17,7 @@
 })(typeof self !== "undefined" ? self : this, function () {
   "use strict";
 
-  var VERSION = "1.0.0";
+  var VERSION = "2.0.0";
 
   /* ---------- normalise anything to a Uint8Array ---------- */
   function toBytes(data) {
@@ -370,11 +370,161 @@ df.fromCSV = function (text) {
 
 
 
+
+  /* =====================================================================
+   * Compression, merged in from compress-kit on 2026-11-12.
+   *
+   * compress-kit was gzip/deflate over the platform's Compression Streams, and this kit
+   * wrote a STORE-ONLY zip because it had no compressor — an archive with no compression in
+   * it, in a kit whose whole job is getting files off the device. The compressor lives here
+   * now: `zipCompressed` writes method 8, and every name compress-kit exported is exported
+   * from here too.
+   * ===================================================================== */
+
+  var G = typeof globalThis !== "undefined" ? globalThis : self;
+  var _enc = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+  var _dec = typeof TextDecoder !== "undefined" ? new TextDecoder() : null;
+
+  function compressionAvailable() {
+    return typeof G.CompressionStream !== "undefined" &&
+           typeof G.DecompressionStream !== "undefined";
+  }
+
+  function transform(bytes, format, kind) {
+    if (!compressionAvailable()) {
+      return Promise.reject(new Error("export-kit compression needs Compression Streams (a modern browser or Node 18+)"));
+    }
+    var stream = (kind === "compress")
+      ? new G.CompressionStream(format)
+      : new G.DecompressionStream(format);
+    var writer = stream.writable.getWriter();
+    var reader = stream.readable.getReader();
+    var chunks = [], total = 0;
+    var done = writer.write(bytes).then(function () { return writer.close(); });
+    return new Promise(function (resolve, reject) {
+      done.catch(reject);
+      (function pump() {
+        reader.read().then(function (r) {
+          if (r.done) {
+            var out = new Uint8Array(total), off = 0, i;
+            for (i = 0; i < chunks.length; i++) { out.set(chunks[i], off); off += chunks[i].length; }
+            resolve(out);
+          } else {
+            chunks.push(r.value); total += r.value.length; pump();
+          }
+        }, reject);
+      })();
+    });
+  }
+
+  function gzip(b) { return transform(b, "gzip", "compress"); }
+  function gunzip(b) { return transform(b, "gzip", "decompress"); }
+  function deflate(b) { return transform(b, "deflate", "compress"); }
+  function inflate(b) { return transform(b, "deflate", "decompress"); }
+  function deflateRaw(b) { return transform(b, "deflate-raw", "compress"); }
+  function inflateRaw(b) { return transform(b, "deflate-raw", "decompress"); }
+
+  function compressString(text, format) {
+    var bytes = _enc ? _enc.encode(text)
+      : Uint8Array.from(unescape(encodeURIComponent(text)), function (c) { return c.charCodeAt(0); });
+    return transform(bytes, format || "gzip", "compress").then(function (b) { return toBase64(b); });
+  }
+  function decompressString(b64, format) {
+    return transform(fromBase64(b64), format || "gzip", "decompress").then(function (b) {
+      return _dec ? _dec.decode(b) : decodeURIComponent(escape(String.fromCharCode.apply(null, b)));
+    });
+  }
+  function toBase64(b) {
+    var s = "", i;
+    for (i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+    return (typeof btoa !== "undefined") ? btoa(s) : Buffer.from(b).toString("base64");
+  }
+  function fromBase64(str) {
+    if (typeof atob !== "undefined") {
+      var bin = atob(str), a = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+      return a;
+    }
+    return new Uint8Array(Buffer.from(str, "base64"));
+  }
+  function compressionRatio(original, compressed) { return original ? (compressed / original) : 0; }
+  function human(n) {
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / 1048576).toFixed(1) + " MB";
+  }
+
+  /**
+   * A ZIP that compresses (method 8). Async, because deflate is.
+   * Each entry keeps whichever of stored/deflated is smaller, so a tiny file never grows.
+   * Without Compression Streams it falls back to the store-only zip() above.
+   */
+  function zipCompressed(files) {
+    files = files || [];
+    if (!compressionAvailable()) return Promise.resolve(zip(files));
+    return Promise.all(files.map(function (f, i) {
+      var data = toBytes(f.data);
+      return transform(data, "deflate-raw", "compress").then(function (deflated) {
+        var useDeflate = deflated.length < data.length;
+        return {
+          name: f.name || ("file" + i),
+          date: f.date,
+          method: useDeflate ? 8 : 0,
+          payload: useDeflate ? deflated : data,
+          stored: data
+        };
+      });
+    })).then(function (entries) {
+      var w = new ByteWriter(), central = [], offset = 0, now = new Date(), i;
+      for (i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var name = utf8Encode(e.name);
+        var crc = crc32(e.stored);
+        var when = e.date || now;
+        var t = dosTime(when), dt = dosDate(when);
+        var local = new ByteWriter();
+        local.u32(0x04034b50).u16(20).u16(0x0800).u16(e.method)
+          .u16(t).u16(dt).u32(crc).u32(e.payload.length).u32(e.stored.length)
+          .u16(name.length).u16(0).bytes(name).bytes(e.payload);
+        var lh = local.done();
+        w.bytes(lh);
+        central.push({ name: name, crc: crc, size: e.payload.length, raw: e.stored.length,
+                       method: e.method, t: t, dt: dt, offset: offset });
+        offset += lh.length;
+      }
+      var cdStart = offset, cdSize = 0;
+      for (i = 0; i < central.length; i++) {
+        var c = central[i], ce = new ByteWriter();
+        ce.u32(0x02014b50).u16(20).u16(20).u16(0x0800).u16(c.method)
+          .u16(c.t).u16(c.dt).u32(c.crc).u32(c.size).u32(c.raw)
+          .u16(c.name.length).u16(0).u16(0).u16(0).u16(0).u32(0).u32(c.offset).bytes(c.name);
+        var cb = ce.done();
+        w.bytes(cb); cdSize += cb.length;
+      }
+      var end = new ByteWriter();
+      end.u32(0x06054b50).u16(0).u16(0).u16(central.length).u16(central.length)
+         .u32(cdSize).u32(cdStart).u16(0);
+      w.bytes(end.done());
+      return w.done();
+    });
+  }
+
+  function saveZipCompressed(name, files) {
+    return zipCompressed(files).then(function (bytes) { return save(name, bytes, "application/zip"); });
+  }
+
   return {
     version: VERSION, df: df, fromCSV: df.fromCSV,
     csvSafe: csvSafe,
     save: save, text: text, json: json, csv: csv, blob: blob,
     zip: zip, saveZip: saveZip,
+    zipCompressed: zipCompressed, saveZipCompressed: saveZipCompressed,
+    gzip: gzip, gunzip: gunzip, deflate: deflate, inflate: inflate,
+    deflateRaw: deflateRaw, inflateRaw: inflateRaw,
+    compressString: compressString, decompressString: decompressString,
+    compressionAvailable: compressionAvailable,
+    toBase64: toBase64, fromBase64: fromBase64,
+    compressionRatio: compressionRatio, human: human,
     crc32: crc32, toBytes: toBytes, utf8Encode: utf8Encode,
     blobUrl: blobUrl, revoke: revoke
   };

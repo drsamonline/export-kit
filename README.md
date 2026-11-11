@@ -29,7 +29,7 @@ Drop `export-kit.js` next to your code and load it, then use the global `Export`
   Export.csv("rows.csv", Loom.csv.toCSV(rows));   // build the CSV with web-kit
   Export.blob("photo.png", someUint8Array, "image/png");
 
-  // bundle several files into one archive (store-only, no compression)
+  // bundle several files into one archive (compressed (method 8) where the platform allows it, store-only otherwise, no compression)
   Export.saveZip("bundle.zip", [
     { name: "notes.txt", data: "hello" },
     { name: "data.json", data: JSON.stringify(obj) },

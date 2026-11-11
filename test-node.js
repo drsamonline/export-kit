@@ -170,4 +170,83 @@ console.log("all dataframe tests passed: groupBy+sum, sort stability, CSV round-
 
 // The real summary: every section above has now run.
 console.log("\n" + pass + " passed, " + fail + " failed");
-process.exit(fail ? 1 : 0);
+
+/* =====================================================================
+ * Compression, merged in from compress-kit on 2026-11-12.
+ *
+ * These are compress-kit's own cases, plus the one that motivated the merge:
+ * a ZIP whose entries are actually deflated.
+ * ===================================================================== */
+const E = require(require("path").join(__dirname, "export-kit.js"));
+
+function eqb(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function rep(n) { const a = new Uint8Array(n); for (let i = 0; i < n; i++) a[i] = (i % 7 === 0) ? 65 : 32; return a; }
+function rnd(n) { const a = new Uint8Array(n); for (let i = 0; i < n; i++) a[i] = (i * 2654435761) % 256; return a; }
+
+let cp = 0, cf = 0;
+async function cok(name, fn) {
+  try { await fn(); cp++; console.log("PASS  " + name); }
+  catch (e) { cf++; console.log("FAIL  " + name + "  — " + e.message); }
+}
+
+(async function () {
+  if (!E.compressionAvailable()) {
+    console.log("SKIP  Compression Streams are not available in this runtime");
+    process.exit(0);
+  }
+  await cok("gzip round-trip", async () => {
+    const d = rnd(5000);
+    if (!eqb(d, await E.gunzip(await E.gzip(d)))) throw new Error("mismatch");
+  });
+  await cok("deflate round-trip", async () => {
+    const d = rnd(5000);
+    if (!eqb(d, await E.inflate(await E.deflate(d)))) throw new Error("mismatch");
+  });
+  await cok("deflate-raw round-trip", async () => {
+    const d = rnd(5000);
+    if (!eqb(d, await E.inflateRaw(await E.deflateRaw(d)))) throw new Error("mismatch");
+  });
+  await cok("repetitive data compresses well", async () => {
+    const d = rep(50000);
+    const gz = await E.gzip(d);
+    if (!(gz.length < d.length / 10)) throw new Error("ratio " + (gz.length / d.length).toFixed(3));
+  });
+  await cok("string round-trip with unicode", async () => {
+    const s = "नमस्ते · કેમ છો · hello " + "x".repeat(200);
+    if (await E.decompressString(await E.compressString(s)) !== s) throw new Error("mismatch");
+  });
+  await cok("zipCompressed actually compresses", async () => {
+    const big = rep(60000);
+    const plain = E.zip([{ name: "a.txt", data: big }]);
+    const packed = await E.zipCompressed([{ name: "a.txt", data: big }]);
+    if (!(packed.length < plain.length / 5)) {
+      throw new Error(`store=${plain.length} deflate=${packed.length}`);
+    }
+    // method 8 in the local header: bytes 8-9 of the first entry
+    const method = packed[8] | (packed[9] << 8);
+    if (method !== 8) throw new Error("method " + method);
+  });
+  await cok("zipCompressed keeps a tiny entry stored", async () => {
+    const tiny = new Uint8Array([1, 2, 3]);
+    const packed = await E.zipCompressed([{ name: "t.bin", data: tiny }]);
+    const method = packed[8] | (packed[9] << 8);
+    if (method !== 0) throw new Error("a 3-byte entry was deflated to " + method);
+  });
+  await cok("both zips carry a valid central directory", async () => {
+    const files = [{ name: "a.txt", data: rep(1000) }, { name: "b.bin", data: rnd(500) }];
+    for (const bytes of [E.zip(files), await E.zipCompressed(files)]) {
+      const tail = bytes.subarray(bytes.length - 22);
+      const sig = tail[0] | (tail[1] << 8) | (tail[2] << 16) | (tail[3] << 24);
+      if (sig !== 0x06054b50) throw new Error("no end-of-central-directory");
+      const count = tail[10] | (tail[11] << 8);
+      if (count !== 2) throw new Error("entries " + count);
+    }
+  });
+
+  console.log(`\ncompression: ${cp} passed, ${cf} failed`);
+  process.exit(cf ? 1 : 0);
+})();
